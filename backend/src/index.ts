@@ -17,7 +17,20 @@ app.use(cors({ origin: (origin, cb) => {
 }}));
 app.use("/api", rateLimit({windowMs:60000,limit:90,standardHeaders:true,legacyHeaders:false}));
 class ApiError extends Error { constructor(public status:number,message:string){super(message);} }
-async function hypixel(path:string) {
+type CacheEntry<T>={expiresAt:number;value?:T;pending?:Promise<T>};
+const cache=new Map<string,CacheEntry<any>>();
+async function cached<T>(cacheKey:string,ttlMs:number,loader:()=>Promise<T>):Promise<T>{
+  const now=Date.now(),existing=cache.get(cacheKey);
+  if(existing&&existing.expiresAt>now){
+    if(existing.pending)return existing.pending;
+    return existing.value as T;
+  }
+  const entry:CacheEntry<T>={expiresAt:now+ttlMs};
+  const pending=loader().then(value=>{entry.value=value;entry.pending=undefined;entry.expiresAt=Date.now()+ttlMs;return value;}).catch(error=>{cache.delete(cacheKey);throw error;});
+  entry.pending=pending;cache.set(cacheKey,entry);return pending;
+}
+
+async function hypixel(path:string,ttlMs=120000) {\n  return cached("hypixel:"+path,ttlMs,async()=>{
   if(!key) throw new ApiError(503,"Backend API key is not configured. Add HYPIXEL_API_KEY in Render.");
   const response=await fetch(new URL(path,"https://api.hypixel.net/"),{headers:{"API-Key":key}});
   const data=await response.json().catch(()=>({})) as any;
@@ -35,10 +48,10 @@ async function uuid(name:string) {
   return d.id;
 }
 app.get("/api/health",(_req,res)=>res.json({ok:true,configured:Boolean(key)}));
-app.get("/api/player/:username",async(req,res,next)=>{try{const id=await uuid(req.params.username);const d=await hypixel("player?uuid="+id);res.json({uuid:id,player:d.player||null});}catch(e){next(e);}});
-app.get("/api/skyblock/profiles/:username",async(req,res,next)=>{try{const id=await uuid(req.params.username);const d=await hypixel("skyblock/profiles?uuid="+id);res.json({uuid:id,profiles:d.profiles||[]});}catch(e){next(e);}});
-app.get("/api/skyblock/bazaar",async(_req,res,next)=>{try{const d=await hypixel("skyblock/bazaar");res.json({products:d.products||{},lastUpdated:d.lastUpdated||null});}catch(e){next(e);}});
-app.get("/api/skyblock/auctions",async(req,res,next)=>{try{const page=Math.max(0,Math.min(10000,Number(req.query.page||0)));res.json(await hypixel("skyblock/auctions?page="+page));}catch(e){next(e);}});
+app.get("/api/player/:username",async(req,res,next)=>{try{const id=await uuid(req.params.username);const d=await hypixel("player?uuid="+id,180000);res.json({uuid:id,player:d.player||null});}catch(e){next(e);}});
+app.get("/api/skyblock/profiles/:username",async(req,res,next)=>{try{const id=await uuid(req.params.username);const d=await hypixel("skyblock/profiles?uuid="+id,180000);res.json({uuid:id,profiles:d.profiles||[]});}catch(e){next(e);}});
+app.get("/api/skyblock/bazaar",async(_req,res,next)=>{try{const d=await hypixel("skyblock/bazaar",60000);res.json({products:d.products||{},lastUpdated:d.lastUpdated||null});}catch(e){next(e);}});
+app.get("/api/skyblock/auctions",async(req,res,next)=>{try{const page=Math.max(0,Math.min(10000,Number(req.query.page||0)));res.json(await hypixel("skyblock/auctions?page="+page,45000));}catch(e){next(e);}});
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const frontendDist = path.resolve(__dirname, "../../frontend/dist");
 app.use(express.static(frontendDist));
