@@ -6,6 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const app = express();
+// Render runs behind a reverse proxy; trust its forwarded client IP for rate limiting.
+app.set("trust proxy", 1);
 const port = Number(process.env.PORT || 4000);
 const key = process.env.HYPIXEL_API_KEY;
 app.use(helmet());
