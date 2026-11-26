@@ -2,6 +2,8 @@ import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
@@ -37,5 +39,12 @@ app.get("/api/player/:username",async(req,res,next)=>{try{const id=await uuid(re
 app.get("/api/skyblock/profiles/:username",async(req,res,next)=>{try{const id=await uuid(req.params.username);const d=await hypixel("skyblock/profiles?uuid="+id);res.json({uuid:id,profiles:d.profiles||[]});}catch(e){next(e);}});
 app.get("/api/skyblock/bazaar",async(_req,res,next)=>{try{const d=await hypixel("skyblock/bazaar");res.json({products:d.products||{},lastUpdated:d.lastUpdated||null});}catch(e){next(e);}});
 app.get("/api/skyblock/auctions",async(req,res,next)=>{try{const page=Math.max(0,Math.min(10000,Number(req.query.page||0)));res.json(await hypixel("skyblock/auctions?page="+page));}catch(e){next(e);}});
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const frontendDist = path.resolve(__dirname, "../../frontend/dist");
+app.use(express.static(frontendDist));
+app.get("*", (req, res, next) => {
+  if (req.path.startsWith("/api/")) return next();
+  res.sendFile(path.join(frontendDist, "index.html"), err => { if (err) next(err); });
+});
 app.use((err:Error|ApiError,_req:Request,res:Response,_next:NextFunction)=>{const status=err instanceof ApiError?err.status:500;res.status(status).json({error:status===500?"Unexpected backend error":err.message});});
 app.listen(port,()=>console.log("SkyTrack API listening on "+port));
