@@ -1,8 +1,7 @@
 services:
   - type: web
-    name: skytrack-api
+    name: skytrack
     runtime: node
-    rootDir: backend
     buildCommand: npm install && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
@@ -10,6 +9,4 @@ services:
       - key: NODE_VERSION
         value: 20
       - key: HYPIXEL_API_KEY
-        sync: false
-      - key: FRONTEND_ORIGIN
         sync: false
