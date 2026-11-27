@@ -36,7 +36,7 @@ async function hypixel(path:string,ttlMs=120000,requestKey?:string) {
   const activeKey=requestKey?.trim()||key;
   if(!activeKey) throw new ApiError(503,"Backend API key is not configured. Add HYPIXEL_API_KEY in Render or use a temporary testing key.");
   const loader=async()=>{
-    const response=await fetch(new URL(path,"https://api.hypixel.net/"),{headers:{"API-Key":activeKey}});
+    const response=await fetch(new URL("v2/"+path,"https://api.hypixel.net/"),{headers:{"API-Key":activeKey}});
     const data=await response.json().catch(()=>({})) as any;
     if(!response.ok||data.success===false) throw new ApiError(response.status===429?429:502,response.status===429?"Hypixel API rate limit. Try again shortly.":String(data.cause||"Hypixel API request failed"));
     return data;
