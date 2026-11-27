@@ -12,6 +12,8 @@ const port = Number(process.env.PORT || 4000);
 const key = process.env.HYPIXEL_API_KEY;
 app.use(helmet());
 app.use(express.json({ limit: "20kb" }));
+// API responses are key-dependent; prevent browser/proxy caching across testing keys.
+app.use("/api", (_req, res, next) => { res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private"); res.setHeader("Pragma", "no-cache"); next(); });
 app.use(cors({ origin: (origin, cb) => {
   const allow = (process.env.FRONTEND_ORIGIN || "").split(",").map(x => x.trim()).filter(Boolean);
   if (!origin || allow.length === 0 || allow.includes(origin)) return cb(null, true);
