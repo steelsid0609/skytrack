@@ -32,14 +32,17 @@ async function cached<T>(cacheKey:string,ttlMs:number,loader:()=>Promise<T>):Pro
   entry.pending=pending;cache.set(cacheKey,entry);return pending;
 }
 
-async function hypixel(path:string,ttlMs=120000) {
-  return cached("hypixel:"+path,ttlMs,async()=>{
-    if(!key) throw new ApiError(503,"Backend API key is not configured. Add HYPIXEL_API_KEY in Render.");
-    const response=await fetch(new URL(path,"https://api.hypixel.net/"),{headers:{"API-Key":key}});
+async function hypixel(path:string,ttlMs=120000,requestKey?:string) {
+  const activeKey=requestKey?.trim()||key;
+  if(!activeKey) throw new ApiError(503,"Backend API key is not configured. Add HYPIXEL_API_KEY in Render or use a temporary testing key.");
+  const loader=async()=>{
+    const response=await fetch(new URL(path,"https://api.hypixel.net/"),{headers:{"API-Key":activeKey}});
     const data=await response.json().catch(()=>({})) as any;
     if(!response.ok||data.success===false) throw new ApiError(response.status===429?429:502,response.status===429?"Hypixel API rate limit. Try again shortly.":String(data.cause||"Hypixel API request failed"));
     return data;
-  });
+  };
+  // Temporary testing keys bypass shared caching to avoid mixing key-specific requests.
+  return requestKey?.trim()?loader():cached("hypixel:"+path,ttlMs,loader);
 }
 async function uuid(name:string) {
   const clean=name.trim();
@@ -54,10 +57,10 @@ async function uuid(name:string) {
   });
 }
 app.get("/api/health",(_req,res)=>res.json({ok:true,configured:Boolean(key)}));
-app.get("/api/player/:username",async(req,res,next)=>{try{const id=await uuid(req.params.username);const d=await hypixel("player?uuid="+id,180000);res.json({uuid:id,player:d.player||null});}catch(e){next(e);}});
-app.get("/api/skyblock/profiles/:username",async(req,res,next)=>{try{const id=await uuid(req.params.username);const d=await hypixel("skyblock/profiles?uuid="+id,180000);res.json({uuid:id,profiles:d.profiles||[]});}catch(e){next(e);}});
-app.get("/api/skyblock/bazaar",async(_req,res,next)=>{try{const d=await hypixel("skyblock/bazaar",60000);res.json({products:d.products||{},lastUpdated:d.lastUpdated||null});}catch(e){next(e);}});
-app.get("/api/skyblock/auctions",async(req,res,next)=>{try{const page=Math.max(0,Math.min(10000,Number(req.query.page||0)));res.json(await hypixel("skyblock/auctions?page="+page,45000));}catch(e){next(e);}});
+app.get("/api/player/:username",async(req,res,next)=>{try{const id=await uuid(req.params.username);const d=await hypixel("player?uuid="+id,180000,req.header("X-Hypixel-Key"));res.json({uuid:id,player:d.player||null});}catch(e){next(e);}});
+app.get("/api/skyblock/profiles/:username",async(req,res,next)=>{try{const id=await uuid(req.params.username);const d=await hypixel("skyblock/profiles?uuid="+id,180000,req.header("X-Hypixel-Key"));res.json({uuid:id,profiles:d.profiles||[]});}catch(e){next(e);}});
+app.get("/api/skyblock/bazaar",async(_req,res,next)=>{try{const d=await hypixel("skyblock/bazaar",60000,_req.header("X-Hypixel-Key"));res.json({products:d.products||{},lastUpdated:d.lastUpdated||null});}catch(e){next(e);}});
+app.get("/api/skyblock/auctions",async(req,res,next)=>{try{const page=Math.max(0,Math.min(10000,Number(req.query.page||0)));res.json(await hypixel("skyblock/auctions?page="+page,45000,req.header("X-Hypixel-Key")));}catch(e){next(e);}});
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const frontendDist = path.resolve(__dirname, "../../frontend/dist");
 app.use(express.static(frontendDist));
