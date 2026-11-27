@@ -38,7 +38,11 @@ async function hypixel(path:string,ttlMs=120000,requestKey?:string) {
   const loader=async()=>{
     const response=await fetch(new URL("v2/"+path,"https://api.hypixel.net/"),{headers:{"API-Key":activeKey}});
     const data=await response.json().catch(()=>({})) as any;
-    if(!response.ok||data.success===false) throw new ApiError(response.status===429?429:502,response.status===429?"Hypixel API rate limit. Try again shortly.":String(data.cause||"Hypixel API request failed"));
+    if(!response.ok||data.success===false) {
+      if(response.status===429) throw new ApiError(429,"Hypixel API rate limit. Try again shortly.");
+      if(response.status===401||response.status===403) throw new ApiError(401,"Hypixel rejected this API key. Check/regenerate the key and try again.");
+      throw new ApiError(502,String(data.cause||("Hypixel API returned HTTP "+response.status)));
+    }
     return data;
   };
   // Temporary testing keys bypass shared caching to avoid mixing key-specific requests.
@@ -48,12 +52,20 @@ async function uuid(name:string) {
   const clean=name.trim();
   if(!/^[a-zA-Z0-9_]{3,16}$/.test(clean)) throw new ApiError(400,"Enter a valid Minecraft username.");
   return cached("uuid:"+clean.toLowerCase(),600000,async()=>{
+    // Ashcon fallback for Mojang endpoint outages/blocks.
+    try {
+      const ash=await fetch("https://api.ashcon.app/mojang/v2/user/"+encodeURIComponent(clean));
+      if(ash.ok){
+        const d=await ash.json() as {uuid?:string};
+        if(d.uuid) return d.uuid.replace(/-/g,"");
+      }
+    } catch {/* fall through to Mojang */}
     const r=await fetch("https://api.mojang.com/users/profiles/minecraft/"+encodeURIComponent(clean));
     if(r.status===404) throw new ApiError(404,"Minecraft username not found.");
-    if(!r.ok) throw new ApiError(502,"Mojang lookup is temporarily unavailable.");
+    if(!r.ok) throw new ApiError(502,"UUID lookup failed: Mojang and Ashcon are unavailable. Try again shortly.");
     const d=await r.json() as {id?:string};
     if(!d.id) throw new ApiError(404,"Minecraft username not found.");
-    return d.id;
+    return d.id.replace(/-/g,"");
   });
 }
 app.get("/api/health",(_req,res)=>res.json({ok:true,configured:Boolean(key)}));
